@@ -227,6 +227,67 @@ if ($use_auth) {
         unset($_SESSION[FM_SESSION_ID]['logged']);
         fm_show_header_login();
 ?>
+        <style>
+            body {
+                background: radial-gradient(circle at top, #141b2b 0, #05080d 55%, #020308 100%);
+                color: #e6ffe6;
+            }
+            section.h-100 {
+                background: transparent;
+            }
+            .card-wrapper {
+                padding-top: 40px;
+                padding-bottom: 40px;
+            }
+            .card.fat {
+                background: rgba(3, 8, 14, 0.92);
+                border-radius: 18px;
+                border: 1px solid rgba(159, 239, 0, 0.35);
+                box-shadow: 0 0 35px rgba(0, 0, 0, 0.9);
+            }
+            .card.fat .card-body {
+                padding-top: 32px;
+                padding-bottom: 28px;
+            }
+            .form-control {
+                background-color: rgba(15, 23, 42, 0.9);
+                border: 1px solid rgba(148, 163, 184, 0.5);
+                color: #e5f7e5;
+            }
+            .form-control::placeholder {
+                color: rgba(148, 163, 184, 0.85);
+            }
+            .form-control:focus {
+                background-color: rgba(15, 23, 42, 1);
+                border-color: #9fef00;
+                box-shadow: 0 0 0 .2rem rgba(159, 239, 0, 0.25);
+                color: #ffffff;
+            }
+            label {
+                color: #e5f7e5;
+            }
+            .btn-success {
+                background: #0b8c2d;
+                border-color: #0b8c2d;
+                font-weight: 600;
+            }
+            .btn-success:hover,
+            .btn-success:focus {
+                background: #11b13a;
+                border-color: #11b13a;
+            }
+            .footer,
+            .footer a,
+            .text-muted {
+                color: #64748b !important;
+            }
+            .brand {
+                margin-bottom: 12px;
+            }
+            .brand div {
+                font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            }
+        </style>
         <section class="h-100">
             <div class="container h-100">
                 <div class="row justify-content-md-center align-content-center h-100vh">
@@ -236,7 +297,7 @@ if ($use_auth) {
                                 <form class="form-signin" action="" method="post" autocomplete="off">
                                     <div class="mb-3">
                                         <div class="brand">
-    <div style="font-size:42px;font-weight:700;letter-spacing:8px;text-align:center;">n0v4</div>
+    <div style="font-size:36px;font-weight:700;letter-spacing:6px;text-align:center;color:#9FEF00;text-shadow:0 0 14px rgba(159,239,0,0.8);white-space:nowrap;line-height:1;">n0v4</div>
 </div>
                                         <div class="text-center">
                                             <h1 class="card-title"><?php echo APP_TITLE; ?></h1>
