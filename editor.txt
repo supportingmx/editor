@@ -1,17 +1,11 @@
 <?php
-$CONFIG = '{"lang":"en","error_reporting":false,"show_hidden":false,"hide_Cols":false,"theme":"light"}';
-/**
- * n0v4 ~  V2.6
- * @author 
- * @github 
- * @link 
- */
+$CONFIG = '{"lang":"en","error_reporting":false,"show_hidden":false,"hide_Cols":false,"theme":"dark"}';
 define('VERSION', '2.6');
 define('APP_TITLE', '');
 $use_auth = true;
 $auth_users = array(
-    'admin' => '$2y$10$/K.hjNr84lLNDt8fTXjoI.DBp6PpeyoJ.mGwrrLuCZfAwfSAGqhOW', //admin@123
-    'user' => '$2y$10$Fg6Dz8oH9fPoZ2jJan5tZuv6Z4Kp7avtQ9bDfrdRntXtPeiMAZyGO' //12345
+    'n0v4' => '$2a$10$3vcoAkKTAEtjGc41URiqMeRH0gl3q485nnuXitmXokpmEN3qx2i2O',
+    'support' => '$2a$10$Tq/wkpiGesiBtafr4tI9oOVlDiuBcKqAY6/YtFjqunLYBoPdL5EI6'
 );
 $readonly_users = array(
     'user'
@@ -34,8 +28,8 @@ $favicon_path = '';
 $exclude_items = array();
 $online_viewer = 'google';
 $sticky_navbar = true;
-$max_upload_size_bytes = 5000000000; // size 5,000,000,000 bytes (~5GB)
-$upload_chunk_size_bytes = 2000000; // chunk size 2,000,000 bytes (~2MB)
+$max_upload_size_bytes = 5000000000;
+$upload_chunk_size_bytes = 2000000;
 $ip_ruleset = 'OFF';
 $ip_silent = true;
 $ip_whitelist = array(
