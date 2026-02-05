@@ -72,7 +72,7 @@
 
     <script type="text/javascript" src="{{ mix('js/section/shopping/invoice.min.js') }}"></script>
 
-    <script type="text/javascript" src="{{ mix('js/section/shopping/invoices.min.js') }}"></script>
+    <script src="{{ asset('js/invoices.js') }}"></script>
 
     <script src="https://www.paypal.com/sdk/js?client-id={{$paypal_client_id}}&locale=es_MX&currency=MXN&components=buttons,funding-eligibility"></script>
 
